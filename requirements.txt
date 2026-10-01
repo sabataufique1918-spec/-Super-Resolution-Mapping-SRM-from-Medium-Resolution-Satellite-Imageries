@@ -1,0 +1,36 @@
+# --- core deep learning ---
+torch>=2.5
+torchvision>=0.20
+
+# --- numerics / imaging ---
+numpy>=1.26
+scipy>=1.11
+scikit-image>=0.22
+scikit-learn>=1.4
+opencv-python-headless>=4.9
+Pillow>=10.2
+
+# --- geospatial ---
+rasterio>=1.3
+pyproj>=3.6
+shapely>=2.0
+affine>=2.4
+
+# --- config / io / cli ---
+PyYAML>=6.0
+tqdm>=4.66
+pandas>=2.1
+requests>=2.31
+
+# --- dataset access ---
+# Resumable, selective download of the SEN2NEON real 10 m / 2.5 m pairs.
+huggingface_hub>=0.26
+
+# --- visualisation / demo ---
+matplotlib>=3.8
+streamlit>=1.32
+streamlit-image-comparison>=0.0.4
+tensorboard>=2.16
+
+# --- testing ---
+pytest>=8.0

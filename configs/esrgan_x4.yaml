@@ -1,0 +1,76 @@
+# Stage 2: the perceptual / generative model.
+#
+# Fine-tunes an RRDB generator with perceptual and adversarial terms for
+# visually plausible texture. Read the trade honestly: this produces the
+# sharpest images and the least trustworthy pixels. The spectral and
+# consistency weights are kept high precisely to bound how far the adversarial
+# term can drag the radiometry, and every product from this model should ship
+# with the reliability map from srm/uncertainty.py.
+#
+# Requires a stage-1 checkpoint in train.init_from. Starting adversarial
+# training from random weights on satellite imagery reliably produces colour
+# drift and texture with no basis in the observation.
+experiment: esrgan_x4
+seed: 1337
+device: auto
+scale: 4
+bands: [B02, B03, B04, B08]
+
+data:
+  patches: data/patches
+  hr_patch: 192
+  augment: true
+  on_the_fly_degradation: true
+  degradation:
+    mode: blind              # jittered PSF: robustness to an imperfectly known sensor
+    mtf_nyquist: 0.30
+    kernel_size: 11
+    noise_sigma: 0.002
+    jitter: 0.15
+    anisotropy: 0.20
+    shot_noise: true
+    per_band_mtf: true
+
+model:
+  name: rrdb
+  features: 64
+  blocks: 12
+  growth: 32
+  res_scale: 0.2
+  dropout: 0.05
+
+loss:
+  pixel:          { type: charbonnier, weight: 1.0 }
+  spectral_angle: { weight: 0.20 }   # raised: the GAN pushes against radiometry
+  consistency:    { weight: 1.00 }   # raised: the main brake on hallucination
+  index:          { weight: 0.20 }
+  gradient:       { weight: 0.0 }    # the adversarial term supplies edges now
+  perceptual:     { weight: 0.05, layers: [relu3_3, relu4_3] }
+  gan:            { weight: 0.005, type: ragan, d_features: 64 }
+
+train:
+  epochs: 30
+  batch_size: 8              # the discriminator roughly doubles memory use
+  num_workers: 4
+  lr: 1.0e-4
+  lr_d: 1.0e-4
+  scheduler: cosine
+  warmup_iters: 500
+  grad_clip: 1.0
+  amp: true
+  ema_decay: 0.999
+  log_every: 25
+  val_every: 1
+  save_every: 5
+  out_dir: checkpoints
+  init_from: checkpoints/edsr_x4/best.pt
+
+eval:
+  metrics: [psnr, ssim, sam, ergas, scc, rmse]
+  data_range: 1.0
+
+infer:
+  tile: 256
+  overlap: 32
+  tta: false
+  batch_size: 2

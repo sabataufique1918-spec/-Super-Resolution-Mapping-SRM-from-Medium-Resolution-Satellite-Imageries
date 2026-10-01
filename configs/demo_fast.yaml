@@ -1,0 +1,61 @@
+# Tiny configuration for the end-to-end smoke run and CI.
+# Trains in a couple of minutes on CPU. Produces a working model, not a good one.
+experiment: demo_fast
+seed: 1337
+device: auto
+scale: 4
+bands: [B02, B03, B04, B08]
+
+data:
+  patches: data/patches_demo
+  hr_patch: 128
+  augment: true
+  on_the_fly_degradation: true
+  degradation:
+    mode: mtf
+    mtf_nyquist: 0.30
+    kernel_size: 9
+    noise_sigma: 0.002
+    per_band_mtf: true
+
+model:
+  name: edsr
+  features: 32
+  blocks: 6
+  res_scale: 0.1
+  attention: true
+  dropout: 0.05
+
+loss:
+  pixel:          { type: charbonnier, weight: 1.0 }
+  spectral_angle: { weight: 0.10 }
+  consistency:    { weight: 0.50 }
+  index:          { weight: 0.10 }
+  gradient:       { weight: 0.05 }
+
+train:
+  epochs: 6
+  batch_size: 8
+  num_workers: 0
+  lr: 3.0e-4
+  scheduler: cosine
+  # Kept well under 25% of this run's total steps (~168 at the default
+  # 16 scenes). Raising it past that is clamped by train.build_scheduler,
+  # which also warns -- see MAX_WARMUP_FRACTION there for why.
+  warmup_iters: 30
+  amp: true
+  ema_decay: 0.99
+  log_every: 20
+  val_every: 1
+  save_every: 3
+  out_dir: checkpoints
+
+eval:
+  metrics: [psnr, ssim, sam, ergas, scc, rmse]
+  data_range: 1.0
+
+infer:
+  tile: 128
+  overlap: 16
+  tta: false
+  batch_size: 4

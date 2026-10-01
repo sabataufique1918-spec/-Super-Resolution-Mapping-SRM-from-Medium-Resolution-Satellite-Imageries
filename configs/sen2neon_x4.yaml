@@ -1,0 +1,93 @@
+# The specified reference configuration: real Sentinel-2 -> NEON 2.5 m pairs.
+#
+# This is the one to train first and the one whose numbers are reportable,
+# because the LR side is an actual Sentinel-2 L2A observation rather than a
+# simulated degradation of the reference. Everything about the objective is
+# deliberately plain -- masked L1 and Adam, as specified -- so that the
+# baseline result is attributable to the architecture and the data, not to a
+# loss cocktail. Add the spectral terms afterwards and measure what each buys.
+#
+#   python scripts/download_sen2neon.py --limit 150
+#   python scripts/prepare_sen2neon.py  --out data/patches_sen2neon
+#   python -m srm.train --config configs/sen2neon_x4.yaml
+experiment: sen2neon_x4
+seed: 1337
+device: auto
+scale: 4
+
+# Blue, green, red, near-infrared. Resolved to file bands 2, 3, 4, 8 by name
+# at dataset-build time -- never by position; SEN2NEON ships 12 bands.
+bands: [B02, B03, B04, B08]
+
+data:
+  patches: data/patches_sen2neon
+  train_shards: train
+  val_shards: val
+  test_shards: test
+  hr_patch: 256              # LR patches are 64x64, per the specification
+  augment: true
+  # Native pairs: the stored LR is the real observation. The loader refuses to
+  # regenerate it, so this flag is inert here and kept only for clarity.
+  on_the_fly_degradation: false
+  degradation:               # used by the Wald consistency term, not for pairing
+    mode: mtf
+    mtf_nyquist: 0.30
+    kernel_size: 11
+    noise_sigma: 0.002
+    per_band_mtf: true
+
+model:
+  name: residual_cnn         # the specified architecture
+  features: 64
+  blocks: 8
+  res_scale: 1.0             # plain local residual, as specified
+  dropout: 0.0
+  global_skip: none          # output comes from the tail conv, not bicubic
+
+loss:
+  # Masked L1 alone, as specified. The mask is the NEON validity layer: without
+  # it the model learns the empty flight-line wedges as dark ground.
+  pixel:          { type: l1, weight: 1.0 }
+  spectral_angle: { weight: 0.0 }
+  consistency:    { weight: 0.0 }
+  index:          { weight: 0.0 }
+  gradient:       { weight: 0.0 }
+  perceptual:     { weight: 0.0 }
+  gan:            { weight: 0.0 }
+
+train:
+  # 20 epochs is ~4100 optimiser steps here, well clear of the warmup and of
+  # the MIN_USEFUL_STEPS guard. Sized to fit two independently seeded runs in
+  # the available time, because an ensemble of two real models says more about
+  # this product than one model trained twice as long.
+  epochs: 20
+  batch_size: 8              # fits a 4 GB card at 64 -> 256 with AMP
+  num_workers: 0             # Windows: worker spawn costs more than it saves here
+  lr: 2.0e-4
+  betas: [0.9, 0.99]
+  scheduler: cosine
+  warmup_iters: 200
+  grad_clip: 1.0
+  amp: true
+  ema_decay: 0.999
+  log_every: 50
+  val_every: 1
+  save_every: 5
+  out_dir: checkpoints
+  monitor: loss              # masked validation loss selects best.pt
+  early_stopping_patience: 6
+  resume: false
+  # Rank epochs on 128 validation patches rather than all 384: selection does
+  # not need the precision that the final test-split evaluation does, and the
+  # numpy metric pass is the single most expensive part of an epoch.
+  val_max_batches: 32
+
+eval:
+  metrics: [psnr, ssim, sam, ergas, scc, rmse, mae]
+  data_range: 1.0            # surface reflectance 0-1, stated explicitly
+
+infer:
+  tile: 128
+  overlap: 16
+  tta: false
+  batch_size: 4

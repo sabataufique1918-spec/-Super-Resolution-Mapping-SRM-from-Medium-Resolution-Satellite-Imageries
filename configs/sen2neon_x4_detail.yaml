@@ -1,0 +1,120 @@
+# Does adding the detail-preserving loss terms recover the sharpness that
+# masked L1 alone gives away?
+#
+# A controlled comparison against `sen2neon_x4.yaml`: identical architecture,
+# data, split, seed, epochs, optimiser and schedule. The *only* difference is
+# which loss terms are switched on. Anything else changing would make the
+# result unattributable.
+#
+# What the baseline measured, on 349 held-out test patches:
+#
+#   PSNR   36.30 -> 36.83   model wins
+#   SSIM   0.952 -> 0.959   model wins
+#   MAE    0.0171 -> 0.0147 model wins
+#   SAM    2.343 -> 2.275   model wins
+#   SCC    0.368 -> 0.185   model LOSES, badly
+#   sharpness_gain  0.637   model is blurrier than bicubic
+#   consistency_rmse 0.0053 -> 0.0162  model LOSES
+#
+# That is masked L1 behaving exactly as it should: the loss-minimising answer
+# under an L1 penalty is the conditional median, which is smooth. The model
+# bought pixel accuracy by declining to commit to detail. Two terms address
+# the two failures directly:
+#
+#   gradient     compares image gradients, so blur is penalised as blur
+#                rather than being invisible to a per-pixel loss
+#   consistency  Wald: re-degrading the output must reproduce the observed
+#                input, which is what the baseline was worst at (3x bicubic)
+#
+# spectral_angle and index are along for the ride at the repo's existing
+# weights: they protect reflectance and NDVI/NDWI while the gradient term
+# pushes for contrast, which is the combination that can otherwise drift.
+#
+#   python -m srm.train --config configs/sen2neon_x4_detail.yaml
+#   python -m srm.evaluate --checkpoint checkpoints/sen2neon_x4_detail/best.pt \
+#       --patches data/patches_sen2neon --split test --report outputs/eval_test_detail
+experiment: sen2neon_x4_detail
+seed: 1337                   # same seed as the baseline; this is a controlled run
+device: auto
+scale: 4
+bands: [B02, B03, B04, B08]
+
+data:
+  patches: data/patches_sen2neon
+  train_shards: train
+  val_shards: val
+  test_shards: test
+  hr_patch: 256
+  augment: true
+  on_the_fly_degradation: false
+  degradation:               # the forward model the consistency term inverts
+    mode: mtf
+    mtf_nyquist: 0.30
+    kernel_size: 11
+    noise_sigma: 0.002
+    per_band_mtf: true
+
+model:                       # identical to the baseline
+  name: residual_cnn
+  features: 64
+  blocks: 8
+  res_scale: 1.0
+  dropout: 0.0
+  global_skip: none
+
+loss:
+  # Masked L1 stays the base term at the same weight, so this is strictly
+  # "the baseline plus these", not a different objective.
+  pixel:          { type: l1, weight: 1.0 }
+  # 0.25, five times the repo's usual 0.05. Measured on real validation
+  # patches with the baseline checkpoint, the term contributions were:
+  #
+  #   pixel 43.5%  sam 21.2%  index 18.1%  consistency 12.1%  gradient 5.1%
+  #
+  # The term meant to fix the largest measured regression was the smallest
+  # part of the objective, which would not have moved it. At 0.25 it is
+  # ~12%, on a par with consistency. Higher risks ringing on edges, which is
+  # the failure mode to watch for if sharpness_gain overshoots past 1.0
+  # while SCC stays flat.
+  gradient:       { weight: 0.25 }
+  # Wald consistency, the repo's tuned weight. Targets the other measured
+  # regression: consistency_rmse 0.0162 against bicubic's 0.0053.
+  consistency:    { weight: 0.50 }
+  spectral_angle: { weight: 0.10 }
+  index:          { weight: 0.10 }
+  perceptual:     { weight: 0.0 }
+  gan:            { weight: 0.0 }
+
+train:                       # byte-identical to the baseline
+  epochs: 20
+  batch_size: 8
+  num_workers: 0
+  lr: 2.0e-4
+  betas: [0.9, 0.99]
+  scheduler: cosine
+  warmup_iters: 200
+  grad_clip: 1.0
+  amp: true
+  ema_decay: 0.999           # clamped to ~0.9976 by the horizon guard
+  log_every: 50
+  val_every: 1
+  save_every: 5
+  out_dir: checkpoints
+  # NOTE: `loss` is now a sum of five terms, so its scale differs from the
+  # baseline's and the two runs' val losses are NOT comparable to each other.
+  # Selection is on PSNR here for that reason; the comparison between runs is
+  # made on the test split afterwards, where the metrics are identical.
+  monitor: psnr
+  early_stopping_patience: 6
+  resume: false
+  val_max_batches: 32
+
+eval:
+  metrics: [psnr, ssim, sam, ergas, scc, rmse, mae]
+  data_range: 1.0
+
+infer:
+  tile: 128
+  overlap: 16
+  tta: false
+  batch_size: 4

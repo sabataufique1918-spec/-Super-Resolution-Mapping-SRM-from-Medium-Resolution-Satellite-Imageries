@@ -1,0 +1,66 @@
+# Stage 1: the PSNR / fidelity model.
+#
+# This is the recommended production configuration. Its errors are blur, not
+# invented structure, which is what you want when the output feeds a classifier,
+# an index time series or a change detector. Train this first -- the perceptual
+# configs fine-tune from its checkpoint.
+experiment: edsr_x4
+seed: 1337
+device: auto
+scale: 4
+bands: [B02, B03, B04, B08]
+
+data:
+  patches: data/patches
+  hr_patch: 192              # LR patches are 48x48
+  augment: true
+  on_the_fly_degradation: true
+  degradation:
+    mode: mtf                # physically motivated Sentinel-2 PSF
+    mtf_nyquist: 0.30
+    kernel_size: 11
+    noise_sigma: 0.002
+    shot_noise: true
+    per_band_mtf: true
+
+model:
+  name: edsr
+  features: 64
+  blocks: 16
+  res_scale: 0.1
+  attention: true
+  dropout: 0.05              # small, and only so MC-dropout uncertainty works
+
+loss:
+  pixel:          { type: charbonnier, weight: 1.0 }
+  spectral_angle: { weight: 0.10 }   # protect the spectral shape
+  consistency:    { weight: 0.50 }   # Wald: degrade(SR) must reproduce LR
+  index:          { weight: 0.10 }   # protect NDVI / NDWI directly
+  gradient:       { weight: 0.05 }   # edges without adversarial hallucination
+  perceptual:     { weight: 0.0 }
+  gan:            { weight: 0.0 }
+
+train:
+  epochs: 60
+  batch_size: 16
+  num_workers: 4
+  lr: 2.0e-4
+  scheduler: cosine
+  warmup_iters: 200
+  grad_clip: 1.0
+  amp: true
+  ema_decay: 0.999
+  log_every: 25
+  val_every: 1
+  save_every: 5
+  out_dir: checkpoints
+
+eval:
+  metrics: [psnr, ssim, sam, ergas, scc, rmse]
+  data_range: 1.0
+
+infer:
+  tile: 256
+  overlap: 32
+  tta: false
+  batch_size: 4

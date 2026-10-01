@@ -1,0 +1,45 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.env
+.env.*
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+.ipynb_checkpoints/
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Streamlit may write credentials here; the committed config.toml is theme only
+.streamlit/secrets.toml
+
+# heavy artefacts -- never commit, never sync
+data/raw/**
+data/scenes/**
+data/patches/**
+data/patches_*/**
+data/samples/*.tif
+checkpoints/**
+outputs/**
+runs/**
+!**/.gitkeep
+!**/README.md
+*.tif
+*.tiff
+*.npz
+*.pt
+*.pth
+*.safetensors
+
+# generated reports can embed absolute local paths
+**/report.json
+**/results.json

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "srm-sentinel2"
+version = "0.1.0"
+description = "Deep-learning Super-Resolution Mapping of medium-resolution (Sentinel-2 10 m) satellite imagery to <4 m products"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[project.scripts]
+srm = "srm.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["srm*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "slow: exercises a full train/infer/evaluate path; deselect with -m 'not slow'",
+]
+
+[tool.ruff]
+line-length = 100

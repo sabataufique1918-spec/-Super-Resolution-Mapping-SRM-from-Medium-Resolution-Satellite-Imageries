@@ -1,0 +1,17 @@
+# Dark scientific console. Imagery reads best against a dark canvas, and the
+# accent is kept to a single hue so that colour in the workspace means data
+# rather than decoration.
+[theme]
+base = "dark"
+primaryColor = "#4c9aff"
+backgroundColor = "#0d1117"
+secondaryBackgroundColor = "#161b22"
+textColor = "#e6edf3"
+font = "sans serif"
+
+[server]
+# GeoTIFF scenes are large; the default 200 MB cap rejects a modest subset.
+maxUploadSize = 1024
+
+[browser]
+gatherUsageStats = false

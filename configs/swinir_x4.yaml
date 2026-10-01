@@ -1,0 +1,67 @@
+# The transformer alternative.
+#
+# Window attention lets the model reuse evidence from repeated structure, which
+# satellite scenes are full of (crop rows, building arrays, orchard grids).
+# Slower per step than EDSR at similar parameter count, and usually the best
+# fidelity model of the three on periodic texture.
+experiment: swinir_x4
+seed: 1337
+device: auto
+scale: 4
+bands: [B02, B03, B04, B08]
+
+data:
+  patches: data/patches
+  hr_patch: 256              # LR 64x64 = 8x8 windows of 8 px
+  augment: true
+  on_the_fly_degradation: true
+  degradation:
+    mode: mtf
+    mtf_nyquist: 0.30
+    kernel_size: 11
+    noise_sigma: 0.002
+    shot_noise: true
+    per_band_mtf: true
+
+model:
+  name: swinir
+  features: 60
+  depths: [4, 4, 4, 4]
+  heads: [4, 4, 4, 4]
+  window: 8
+  mlp_ratio: 2.0
+  dropout: 0.0
+
+loss:
+  pixel:          { type: charbonnier, weight: 1.0 }
+  spectral_angle: { weight: 0.10 }
+  consistency:    { weight: 0.50 }
+  index:          { weight: 0.10 }
+  gradient:       { weight: 0.05 }
+  perceptual:     { weight: 0.0 }
+  gan:            { weight: 0.0 }
+
+train:
+  epochs: 60
+  batch_size: 8              # attention is memory-hungry; 8 fits 4 GB at 64x64
+  num_workers: 4
+  lr: 2.0e-4
+  scheduler: cosine
+  warmup_iters: 500
+  grad_clip: 1.0
+  amp: true
+  ema_decay: 0.999
+  log_every: 25
+  val_every: 1
+  save_every: 5
+  out_dir: checkpoints
+
+eval:
+  metrics: [psnr, ssim, sam, ergas, scc, rmse]
+  data_range: 1.0
+
+infer:
+  tile: 128                  # smaller tiles: attention cost grows with area
+  overlap: 24
+  tta: false
+  batch_size: 2
